@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <cstdio>
 #include <fstream>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -34,7 +33,7 @@ TextDecoder::~TextDecoder() {
     free_decoder_model(model_);
 }
 
-bool TextDecoder::load_model(const std::string & model_path) {
+bool TextDecoder::load_model(const std::string & model_path, backend_mode mode) {
     struct ggml_context * meta_ctx = nullptr;
     struct gguf_init_params params = {
         /*.no_alloc =*/ true,
@@ -96,14 +95,12 @@ bool TextDecoder::load_model(const std::string & model_path) {
         return nullptr;
     };
 
-    state_.backend_gpu = init_gpu_backend();
-    if (state_.backend_gpu) {
-        ggml_backend_dev_t dev = ggml_backend_get_device(state_.backend_gpu);
-        fprintf(stderr, "GPU backend: %s (%s)\n",
-                ggml_backend_name(state_.backend_gpu),
-                dev ? ggml_backend_dev_name(dev) : "unknown device");
-    } else {
-        fprintf(stderr, "GPU backend: not available\n");
+    if (mode != backend_mode::cpu) {
+        state_.backend_gpu = init_gpu_backend();
+        if (!state_.backend_gpu && mode == backend_mode::gpu) {
+            error_msg_ = "GPU backend requested but not available";
+            return false;
+        }
     }
 
     std::vector<ggml_backend_t> backends;
@@ -325,7 +322,7 @@ bool TextDecoder::load_tensor_data(const std::string & path, struct gguf_context
     }
 
     // Try GPU device buffer (zero-copy on Apple Silicon unified memory)
-    ggml_backend_dev_t gpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+    ggml_backend_dev_t gpu_dev = state_.backend_gpu ? ggml_backend_get_device(state_.backend_gpu) : nullptr;
     if (gpu_dev) {
         model_.buffer = ggml_backend_dev_buffer_from_host_ptr(gpu_dev, data_base, total_size, max_tensor_size);
     }

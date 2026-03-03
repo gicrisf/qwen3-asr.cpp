@@ -18,15 +18,15 @@ static int64_t get_time_ms() {
 Qwen3ASR::Qwen3ASR() = default;
 Qwen3ASR::~Qwen3ASR() = default;
 
-bool Qwen3ASR::load_model(const std::string & model_path) {
+bool Qwen3ASR::load_model(const std::string & model_path, backend_mode mode) {
     int64_t t_start = get_time_ms();
     
-    if (!encoder_.load_model(model_path)) {
+    if (!encoder_.load_model(model_path, mode)) {
         error_msg_ = "Failed to load audio encoder: " + encoder_.get_error();
         return false;
     }
     
-    if (!decoder_.load_model(model_path)) {
+    if (!decoder_.load_model(model_path, mode)) {
         error_msg_ = "Failed to load text decoder: " + decoder_.get_error();
         return false;
     }

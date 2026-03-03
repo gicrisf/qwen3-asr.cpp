@@ -1,3 +1,4 @@
+#include "backend.h"
 #include "qwen3_asr.h"
 #include "forced_aligner.h"
 #include "timing.h"
@@ -27,6 +28,7 @@ struct cli_params {
     bool align_mode = false;
     bool transcribe_align_mode = false;
     bool profile = false;
+    qwen3_asr::backend_mode backend = qwen3_asr::backend_mode::auto_backend;
 };
 
 static void print_usage(const char * prog) {
@@ -39,6 +41,7 @@ static void print_usage(const char * prog) {
     fprintf(stderr, "  -l, --language <code>  Language code (optional, e.g. 'korean' for Korean word splitting)\n");
     fprintf(stderr, "  -t, --threads <n>      Number of threads (default: 4)\n");
     fprintf(stderr, "  --max-tokens <n>       Maximum tokens to generate (default: 1024)\n");
+    fprintf(stderr, "  --backend <mode>       Backend: auto, cpu, or gpu (default: auto)\n");
     fprintf(stderr, "  --progress             Print progress during transcription\n");
     fprintf(stderr, "  --no-timing            Don't print timing information\n");
     fprintf(stderr, "  --tokens               Print token IDs\n");
@@ -105,6 +108,22 @@ static bool parse_args(int argc, char ** argv, cli_params & params) {
                 return false;
             }
             params.max_tokens = std::atoi(argv[++i]);
+        } else if (strcmp(arg, "--backend") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: %s requires an argument\n", arg);
+                return false;
+            }
+            const char * mode = argv[++i];
+            if (strcmp(mode, "auto") == 0) {
+                params.backend = qwen3_asr::backend_mode::auto_backend;
+            } else if (strcmp(mode, "cpu") == 0) {
+                params.backend = qwen3_asr::backend_mode::cpu;
+            } else if (strcmp(mode, "gpu") == 0) {
+                params.backend = qwen3_asr::backend_mode::gpu;
+            } else {
+                fprintf(stderr, "Error: Unknown backend mode: %s (use auto, cpu, or gpu)\n", mode);
+                return false;
+            }
         } else if (strcmp(arg, "--progress") == 0) {
             params.print_progress = true;
         } else if (strcmp(arg, "--no-timing") == 0) {
@@ -304,7 +323,7 @@ static int run_alignment(const cli_params & params) {
     
     qwen3_asr::ForcedAligner aligner;
     
-    if (!aligner.load_model(params.model_path)) {
+    if (!aligner.load_model(params.model_path, params.backend)) {
         fprintf(stderr, "Error: %s\n", aligner.get_error().c_str());
         return 1;
     }
@@ -364,11 +383,12 @@ static int run_transcription(const cli_params & params) {
     fprintf(stderr, "  Model: %s\n", params.model_path.c_str());
     fprintf(stderr, "  Audio: %s\n", params.audio_path.c_str());
     fprintf(stderr, "  Threads: %d\n", params.n_threads);
+    fprintf(stderr, "  Backend: %s\n", qwen3_asr::backend_mode_name(params.backend));
     fprintf(stderr, "\n");
     
     qwen3_asr::Qwen3ASR asr;
     
-    if (!asr.load_model(params.model_path)) {
+    if (!asr.load_model(params.model_path, params.backend)) {
         fprintf(stderr, "Error: %s\n", asr.get_error().c_str());
         return 1;
     }
@@ -420,11 +440,12 @@ static int run_transcribe_and_align(const cli_params & params) {
     fprintf(stderr, "  Aligner Model: %s\n", params.aligner_model_path.c_str());
     fprintf(stderr, "  Audio: %s\n", params.audio_path.c_str());
     fprintf(stderr, "  Threads: %d\n", params.n_threads);
+    fprintf(stderr, "  Backend: %s\n", qwen3_asr::backend_mode_name(params.backend));
     fprintf(stderr, "\n");
 
     fprintf(stderr, "--- Phase 1: Transcription ---\n");
     qwen3_asr::Qwen3ASR asr;
-    if (!asr.load_model(params.model_path)) {
+    if (!asr.load_model(params.model_path, params.backend)) {
         fprintf(stderr, "Error (ASR): %s\n", asr.get_error().c_str());
         return 1;
     }
@@ -455,7 +476,7 @@ static int run_transcribe_and_align(const cli_params & params) {
 
     fprintf(stderr, "\n--- Phase 2: Forced Alignment ---\n");
     qwen3_asr::ForcedAligner aligner;
-    if (!aligner.load_model(params.aligner_model_path)) {
+    if (!aligner.load_model(params.aligner_model_path, params.backend)) {
         fprintf(stderr, "Error (Aligner): %s\n", aligner.get_error().c_str());
         return 1;
     }
@@ -513,16 +534,18 @@ static void ggml_log_callback_quiet(enum ggml_log_level level, const char * text
 
 static void log_backend_devices() {
     const size_t n_devs = ggml_backend_dev_count();
-    fprintf(stderr, "ggml devices: %zu\n", n_devs);
+    fprintf(stderr, "Detected backends (%zu):", n_devs);
     for (size_t i = 0; i < n_devs; ++i) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
         ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
-        fprintf(stderr, "  [%zu] %s (type=%d, backend=%s)\n",
-                i,
+        fprintf(stderr, " %s[%s]",
                 ggml_backend_dev_name(dev),
-                (int)ggml_backend_dev_type(dev),
                 reg ? ggml_backend_reg_name(reg) : "unknown");
+        if (i + 1 < n_devs) {
+            fprintf(stderr, ",");
+        }
     }
+    fprintf(stderr, "\n");
 }
 
 int main(int argc, char ** argv) {

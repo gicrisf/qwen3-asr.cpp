@@ -1,5 +1,6 @@
 #pragma once
 
+#include "backend.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "gguf.h"
@@ -108,7 +109,7 @@ public:
     ~GGUFLoader();
     
     // Load model from GGUF file
-    bool load(const std::string & path, audio_encoder_model & model);
+    bool load(const std::string & path, audio_encoder_model & model, backend_mode mode = backend_mode::auto_backend);
     
     // Get error message if load failed
     const std::string & get_error() const { return error_msg_; }
@@ -121,8 +122,8 @@ private:
     bool create_tensors(struct gguf_context * ctx, audio_encoder_model & model);
     
     // Load tensor data from file
-    bool load_tensor_data(const std::string & path, struct gguf_context * ctx, 
-                          audio_encoder_model & model);
+    bool load_tensor_data(const std::string & path, struct gguf_context * ctx,
+                          audio_encoder_model & model, backend_mode mode);
     
     std::string error_msg_;
 };

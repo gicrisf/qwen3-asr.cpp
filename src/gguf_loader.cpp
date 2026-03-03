@@ -14,7 +14,18 @@ GGUFLoader::GGUFLoader() = default;
 
 GGUFLoader::~GGUFLoader() = default;
 
-bool GGUFLoader::load(const std::string & path, audio_encoder_model & model) {
+static ggml_backend_dev_t select_gpu_device() {
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        enum ggml_backend_dev_type dev_type = ggml_backend_dev_type(dev);
+        if (dev_type == GGML_BACKEND_DEVICE_TYPE_GPU || dev_type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            return dev;
+        }
+    }
+    return nullptr;
+}
+
+bool GGUFLoader::load(const std::string & path, audio_encoder_model & model, backend_mode mode) {
     struct ggml_context * meta_ctx = nullptr;
     struct gguf_init_params params = {
         /*.no_alloc =*/ true,
@@ -39,7 +50,7 @@ bool GGUFLoader::load(const std::string & path, audio_encoder_model & model) {
         return false;
     }
     
-    if (!load_tensor_data(path, ctx, model)) {
+    if (!load_tensor_data(path, ctx, model, mode)) {
         free_model(model);
         gguf_free(ctx);
         if (meta_ctx) ggml_free(meta_ctx);
@@ -252,8 +263,8 @@ bool GGUFLoader::create_tensors(struct gguf_context * ctx, audio_encoder_model &
     return true;
 }
 
-bool GGUFLoader::load_tensor_data(const std::string & path, struct gguf_context * ctx, 
-                                   audio_encoder_model & model) {
+bool GGUFLoader::load_tensor_data(const std::string & path, struct gguf_context * ctx,
+                                  audio_encoder_model & model, backend_mode mode) {
     int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0) {
         error_msg_ = "Failed to open file for mmap: " + path;
@@ -290,10 +301,18 @@ bool GGUFLoader::load_tensor_data(const std::string & path, struct gguf_context 
         if (sz > max_tensor_size) max_tensor_size = sz;
     }
 
-    // Try GPU device buffer (zero-copy on Apple Silicon unified memory)
-    ggml_backend_dev_t gpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
-    if (gpu_dev) {
-        model.buffer = ggml_backend_dev_buffer_from_host_ptr(gpu_dev, data_base, total_size, max_tensor_size);
+    // Try GPU/IGPU device buffer (zero-copy on unified memory)
+    if (mode != backend_mode::cpu) {
+        ggml_backend_dev_t gpu_dev = select_gpu_device();
+        if (gpu_dev) {
+            model.buffer = ggml_backend_dev_buffer_from_host_ptr(gpu_dev, data_base, total_size, max_tensor_size);
+        } else if (mode == backend_mode::gpu) {
+            error_msg_ = "GPU backend requested but no GPU device is available";
+            munmap(mmap_addr, st.st_size);
+            model.mmap_addr = nullptr;
+            model.mmap_size = 0;
+            return false;
+        }
     }
     if (!model.buffer) {
         model.buffer = ggml_backend_cpu_buffer_from_ptr(data_base, total_size);

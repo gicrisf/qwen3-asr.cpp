@@ -1,5 +1,6 @@
 #pragma once
 
+#include "backend.h"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "gguf.h"
@@ -202,7 +203,7 @@ public:
     ~ForcedAligner();
     
     // Load model from GGUF file
-    bool load_model(const std::string & model_path);
+    bool load_model(const std::string & model_path, backend_mode mode = backend_mode::auto_backend);
     
     alignment_result align(const std::string & audio_path, const std::string & text,
                            const std::string & language = "");

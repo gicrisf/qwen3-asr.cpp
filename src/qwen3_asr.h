@@ -1,5 +1,6 @@
 #pragma once
 
+#include "backend.h"
 #include "mel_spectrogram.h"
 #include "audio_encoder.h"
 #include "text_decoder.h"
@@ -55,7 +56,7 @@ public:
     
     // Load model from GGUF file
     // Returns true on success, false on failure (check get_error())
-    bool load_model(const std::string & model_path);
+    bool load_model(const std::string & model_path, backend_mode mode = backend_mode::auto_backend);
     
     // Transcribe audio file (WAV format, 16kHz mono)
     // Returns transcription result

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "backend.h"
 #include "gguf_loader.h"
 
 #include <vector>
@@ -22,7 +23,7 @@ public:
     AudioEncoder();
     ~AudioEncoder();
     
-    bool load_model(const std::string & model_path);
+    bool load_model(const std::string & model_path, backend_mode mode = backend_mode::auto_backend);
     
     bool encode(const float * mel_data, int n_mel, int n_frames, 
                 std::vector<float> & output);
