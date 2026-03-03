@@ -102,7 +102,29 @@ bool ForcedAligner::load_model(const std::string & model_path) {
         return false;
     }
 
-    state_.backend_gpu = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_GPU, nullptr);
+    auto init_gpu_backend = []() -> ggml_backend_t {
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            enum ggml_backend_dev_type dev_type = ggml_backend_dev_type(dev);
+            if (dev_type == GGML_BACKEND_DEVICE_TYPE_GPU || dev_type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+                ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
+                if (backend) {
+                    return backend;
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    state_.backend_gpu = init_gpu_backend();
+    if (state_.backend_gpu) {
+        ggml_backend_dev_t dev = ggml_backend_get_device(state_.backend_gpu);
+        fprintf(stderr, "GPU backend: %s (%s)\n",
+                ggml_backend_name(state_.backend_gpu),
+                dev ? ggml_backend_dev_name(dev) : "unknown device");
+    } else {
+        fprintf(stderr, "GPU backend: not available\n");
+    }
 
     std::vector<ggml_backend_t> backends;
     std::vector<ggml_backend_buffer_type_t> backend_bufts;

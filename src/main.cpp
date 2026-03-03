@@ -2,6 +2,7 @@
 #include "forced_aligner.h"
 #include "timing.h"
 #include "ggml.h"
+#include "ggml-backend.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -510,6 +511,20 @@ static void ggml_log_callback_quiet(enum ggml_log_level level, const char * text
     }
 }
 
+static void log_backend_devices() {
+    const size_t n_devs = ggml_backend_dev_count();
+    fprintf(stderr, "ggml devices: %zu\n", n_devs);
+    for (size_t i = 0; i < n_devs; ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+        fprintf(stderr, "  [%zu] %s (type=%d, backend=%s)\n",
+                i,
+                ggml_backend_dev_name(dev),
+                (int)ggml_backend_dev_type(dev),
+                reg ? ggml_backend_reg_name(reg) : "unknown");
+    }
+}
+
 int main(int argc, char ** argv) {
     ggml_log_set(ggml_log_callback_quiet, nullptr);
 
@@ -520,6 +535,10 @@ int main(int argc, char ** argv) {
         print_usage(argv[0]);
         return 1;
     }
+
+    // Load dynamic ggml backends (e.g. Vulkan) if available
+    ggml_backend_load_all();
+    log_backend_devices();
     
     if (params.transcribe_align_mode) {
         return run_transcribe_and_align(params);
